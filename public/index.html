@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disparador WhatsApp</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #25D366;
+        }
+        
+        .status {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #333;
+        }
+        
+        input, textarea, select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+        
+        .btn {
+            background-color: #25D366;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        
+        .btn:hover {
+            background-color: #1da851;
+        }
+        
+        .btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background-color: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #545b62;
+        }
+        
+        .btn-danger {
+            background-color: #dc3545;
+        }
+        
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+        
+        .file-info {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .example {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        .controls {
+            text-align: center;
+            margin-top: 30px;
+        }
+        
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Disparador WhatsApp</h1>
+            <p>Sistema simples para envio de mensagens em massa</p>
+        </div>
+
+        <div id="status" class="status disconnected">
+            🔄 Verificando conexão...
+        </div>
+
+        <form id="disparadorForm">
+            <div class="form-group">
+                <label for="csvFile">📄 Arquivo CSV com Contatos:</label>
+                <input type="file" id="csvFile" name="csvFile" accept=".csv" required>
+                <div class="file-info">
+                    Formato: nome,numero,mensagem (opcional)
+                </div>
+                <div class="example">
+                    <strong>Exemplo:</strong><br>
+                    João Silva,11999999999,Olá {nome}! Como está?<br>
+                    Maria Santos,11888888888<br>
+                    Pedro Costa,11777777777,Mensagem personalizada
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="message">💬 Mensagem Padrão:</label>
+                <textarea id="message" name="message" placeholder="Digite a mensagem que será enviada para todos os contatos que não têm mensagem personalizada no CSV. Use {nome} para personalizar." required></textarea>
+                <div class="file-info">
+                    Use {nome} para inserir o nome do contato automaticamente
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="delay">⏱️ Delay entre Mensagens (segundos):</label>
+                <input type="number" id="delay" name="delay" min="1" max="60" value="5" required>
+                <div class="file-info">
+                    Tempo de espera entre cada mensagem (recomendado: 3-10 segundos)
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="startTime">🕐 Horário para Iniciar (Brasília):</label>
+                <input type="time" id="startTime" name="startTime" required>
+                <div class="file-info">
+                    O disparo será executado no próximo dia neste horário
+                </div>
+            </div>
+
+            <div class="controls">
+                <button type="submit" class="btn" id="scheduleBtn">
+                    📅 Agendar Disparo
+                </button>
+                
+                <button type="button" class="btn btn-secondary" id="startNowBtn" disabled>
+                    🚀 Iniciar Agora
+                </button>
+                
+                <button type="button" class="btn btn-danger" id="stopBtn" disabled>
+                    ⏹️ Parar
+                </button>
+            </div>
+        </form>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        let isConnected = false;
+        let hasQueue = false;
+        let isRunning = false;
+
+        // Verificar status da conexão
+        async function checkStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                isConnected = data.connected;
+                hasQueue = data.queueLength > 0;
+                isRunning = data.isRunning;
+                
+                updateStatusDisplay();
+                updateButtonStates();
+            } catch (error) {
+                console.error('Erro ao verificar status:', error);
+            }
+        }
+
+        function updateStatusDisplay() {
+            const statusEl = document.getElementById('status');
+            
+            if (isConnected) {
+                statusEl.className = 'status connected';
+                statusEl.innerHTML = '✅ WhatsApp Conectado';
+            } else {
+                statusEl.className = 'status disconnected';
+                statusEl.innerHTML = '❌ WhatsApp Desconectado - Escaneie o QR Code no terminal';
+            }
+        }
+
+        function updateButtonStates() {
+            const scheduleBtn = document.getElementById('scheduleBtn');
+            const startNowBtn = document.getElementById('startNowBtn');
+            const stopBtn = document.getElementById('stopBtn');
+            
+            scheduleBtn.disabled = !isConnected;
+            startNowBtn.disabled = !isConnected || !hasQueue || isRunning;
+            stopBtn.disabled = !isRunning;
+        }
+
+        function showResult(message, isSuccess = true) {
+            const resultEl = document.getElementById('result');
+            resultEl.className = isSuccess ? 'success' : 'error';
+            resultEl.innerHTML = message;
+            resultEl.style.display = 'block';
+        }
+
+        // Submit do formulário
+        document.getElementById('disparadorForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            formData.append('csvFile', document.getElementById('csvFile').files[0]);
+            formData.append('message', document.getElementById('message').value);
+            formData.append('delay', document.getElementById('delay').value);
+            formData.append('startTime', document.getElementById('startTime').value);
+            
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult(`✅ ${data.message}`, true);
+                    hasQueue = true;
+                    updateButtonStates();
+                } else {
+                    showResult(`❌ ${data.error}`, false);
+                }
+            } catch (error) {
+                showResult(`❌ Erro: ${error.message}`, false);
+            }
+        });
+
+        // Iniciar agora
+        document.getElementById('startNowBtn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/start-now', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showResult('🚀 Disparo iniciado!', true);
+                    isRunning = true;
+                    updateButtonStates();
+                } else {
+                    showResult(`❌ ${data.error}`, false);
+                }
+            } catch (error) {
+                showResult(`❌ Erro: ${error.message}`, false);
+            }
+        });
+
+        // Parar disparo
+        document.getElementById('stopBtn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/stop', { method: 'POST' });
+                const data = await response.json();
+                
+                showResult('⏹️ Disparo interrompido!', true);
+                isRunning = false;
+                updateButtonStates();
+            } catch (error) {
+                showResult(`❌ Erro: ${error.message}`, false);
+            }
+        });
+
+        // Verificar status periodicamente
+        setInterval(checkStatus, 2000);
+        checkStatus();
+
+        // Definir horário atual + 1 minuto como padrão
+        const now = new Date();
+        now.setMinutes(now.getMinutes() + 1);
+        document.getElementById('startTime').value = now.toTimeString().slice(0, 5);
+    </script>
+</body>
+</html>
