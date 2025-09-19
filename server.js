@@ -3,9 +3,9 @@ const wppconnect = require('@wppconnect-team/wppconnect');
 const multer = require('multer');
 const csvParser = require('csv-parser');
 const fs = require('fs');
+const path = require('path');
 const moment = require('moment-timezone');
 const cron = require('node-cron');
-const path = require('path');
 
 const app = express();
 const PORT = 3000;
@@ -15,12 +15,11 @@ let client = null;
 let isConnected = false;
 let messageQueue = [];
 let currentConfig = {
-  delay: 5000, // 5 segundos padrão
+  delay: 5000,
   startTime: null,
   isRunning: false
 };
 
-// Configuração do multer para upload de arquivos
 const upload = multer({ dest: 'uploads/' });
 
 // Middleware
@@ -28,28 +27,105 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Inicializar WhatsApp
+// Inicializar WhatsApp com configurações corrigidas
 async function initWhatsApp() {
   try {
     console.log('🔄 Iniciando conexão com WhatsApp...');
     
+    // Criar pasta tokens se não existir
+    const tokensPath = path.join(__dirname, 'tokens');
+    if (!fs.existsSync(tokensPath)) {
+      fs.mkdirSync(tokensPath, { recursive: true });
+    }
+
     client = await wppconnect.create({
       session: 'disparador',
-      catchQR: (base64Qr, asciiQR, attempts) => {
-        console.log(`📱 QR Code gerado (tentativa ${attempts})`);
-        console.log('Escaneie o QR Code no seu celular:');
-        console.log(asciiQR);
+      
+      // CONFIGURAÇÕES CRÍTICAS PARA QR CODE
+      headless: false,        // IMPORTANTE: false para mostrar QR
+      devtools: false,
+      useChrome: true,        // Usar Chrome ao invés do Chromium
+      debug: false,
+      logQR: true,           // IMPORTANTE: true para mostrar QR no terminal
+      disableWelcome: true,
+      updatesLog: true,
+      autoClose: 0,          // IMPORTANTE: 0 para não fechar automaticamente
+      
+      // Configurações de pasta
+      folderNameToken: './tokens',
+      createPathFileToken: true,
+      tokenStore: 'file',
+      
+      // Configurações do browser
+      browserArgs: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--disable-extensions',
+        '--disable-plugins'
+      ],
+      
+      puppeteerOptions: {
+        headless: false,     // IMPORTANTE: false aqui também
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu'
+        ],
+        timeout: 60000
       },
-      statusFind: (statusSession, session) => {
-        console.log(`📊 Status: ${statusSession}`);
-        if (statusSession === 'isLogged') {
-          isConnected = true;
-          console.log('✅ WhatsApp conectado com sucesso!');
+
+      // Callback para capturar QR Code
+      catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
+        console.log('\n🔥🔥🔥 QR CODE DETECTADO 🔥🔥🔥');
+        console.log(`📱 Tentativa ${attempts}/3`);
+        console.log('🔗 URL do QR Code:', urlCode);
+        console.log('\n📋 ESCANEIE O QR CODE ABAIXO:\n');
+        console.log(asciiQR);
+        console.log('\n🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n');
+        
+        // Salvar QR como imagem também
+        if (base64Qr) {
+          const qrPath = path.join(__dirname, 'qr-code.png');
+          const base64Data = base64Qr.replace(/^data:image\/png;base64,/, '');
+          try {
+            fs.writeFileSync(qrPath, base64Data, 'base64');
+            console.log(`💾 QR Code salvo em: ${qrPath}`);
+          } catch (err) {
+            console.error('❌ Erro ao salvar QR:', err.message);
+          }
         }
       },
-      logQR: true,
-      headless: false,
-      devtools: false
+
+      statusFind: (statusSession, session) => {
+        console.log(`📊 Status da Sessão '${session}': ${statusSession}`);
+        
+        switch(statusSession) {
+          case 'isLogged':
+            isConnected = true;
+            console.log('✅ WhatsApp conectado com sucesso!');
+            break;
+          case 'notLogged':
+            isConnected = false;
+            console.log('❌ WhatsApp desconectado - aguardando QR Code...');
+            break;
+          case 'qrReadSuccess':
+            console.log('📱 QR Code lido com sucesso!');
+            break;
+          case 'qrReadFail':
+            console.log('❌ Falha ao ler QR Code - gerando novo...');
+            break;
+          case 'browserClose':
+            isConnected = false;
+            console.log('❌ Browser fechado');
+            break;
+          default:
+            console.log(`ℹ️ Status: ${statusSession}`);
+        }
+      }
     });
 
     console.log('✅ Cliente WhatsApp inicializado');
