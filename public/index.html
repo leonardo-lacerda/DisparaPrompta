@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Sender Pro - Produção</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .badge {
+            background: rgba(255,255,255,0.2);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            display: inline-block;
+            margin-top: 10px;
+        }
+
+        .content {
+            padding: 40px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 25px;
+            border: 2px solid #f0f0f0;
+            border-radius: 15px;
+            transition: all 0.3s ease;
+        }
+
+        .section:hover {
+            border-color: #25d366;
+            box-shadow: 0 5px 15px rgba(37, 211, 102, 0.1);
+        }
+
+        .section-title {
+            font-size: 1.3rem;
+            color: #333;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #dc3545;
+            display: inline-block;
+            margin-left: 10px;
+        }
+
+        .status-indicator.connected {
+            background: #28a745;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #25d366;
+        }
+
+        .file-upload {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .file-upload input[type="file"] {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .file-upload-label {
+            display: block;
+            padding: 15px;
+            border: 2px dashed #25d366;
+            border-radius: 8px;
+            text-align: center;
+            background: #f8fff9;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .file-upload-label:hover {
+            background: #e8f5e8;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(37, 211, 102, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+        }
+
+        .btn-stop:hover:not(:disabled) {
+            box-shadow: 0 10px 20px rgba(220, 53, 69, 0.3);
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 600;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 25px;
+            background: #f0f0f0;
+            border-radius: 12px;
+            overflow: hidden;
+            margin: 15px 0;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #25d366, #128c7e);
+            width: 0%;
+            transition: width 0.5s ease;
+            position: relative;
+        }
+
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 14px;
+            font-weight: 600;
+            color: #333;
+            z-index: 1;
+        }
+
+        .logs {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 0;
+        }
+
+        .log-entry.success {
+            color: #28a745;
+        }
+
+        .log-entry.error {
+            color: #dc3545;
+        }
+
+        .csv-preview {
+            margin-top: 15px;
+            overflow-x: auto;
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .csv-preview table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        .csv-preview th,
+        .csv-preview td {
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+
+        .csv-preview th {
+            background: #e9ecef;
+            font-weight: 600;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📱 WhatsApp Sender Pro</h1>
+            <p>Sistema profissional para envio de mensagens em massa</p>
+            <div class="badge">🚀 VERSÃO PRODUÇÃO</div>
+        </div>
+        
+        <div class="content">
+            <!-- Status Geral -->
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <div class="stat-number" id="statConnected">❌</div>
+                    <div class="stat-label">WhatsApp</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="statContacts">0</div>
+                    <div class="stat-label">Contatos</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="statSent">0</div>
+                    <div class="stat-label">Enviadas</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number" id="statProgress">0%</div>
+                    <div class="stat-label">Progresso</div>
+                </div>
+            </div>
+
+            <!-- Seção de Conexão -->
+            <div class="section">
+                <div class="section-title">
+                    🔗 1. Conectar WhatsApp
+                    <span class="status-indicator" id="connectionIndicator"></span>
+                </div>
+                <button id="connectBtn" class="btn">Conectar WhatsApp</button>
+                <div id="connectionStatus"></div>
+            </div>
+
+            <!-- Seção de Upload CSV -->
+            <div class="section">
+                <div class="section-title">📁 2. Carregar Lista CSV</div>
+                <div class="form-group">
+                    <label>Arquivo CSV (colunas: telefone, nome, mensagem)</label>
+                    <div class="file-upload">
+                        <input type="file" id="csvFile" accept=".csv" />
+                        <label for="csvFile" class="file-upload-label">
+                            📁 Clique para selecionar o arquivo CSV
+                        </label>
+                    </div>
+                </div>
+                <div id="csvPreview"></div>
+            </div>
+
+            <!-- Seção de Configurações -->
+            <div class="section">
+                <div class="section-title">⚙️ 3. Configurações de Envio</div>
+                <div class="form-group">
+                    <label>Delay entre mensagens (segundos)</label>
+                    <input type="number" id="delay" value="5" min="1" max="300" />
+                </div>
+                <div class="form-group">
+                    <label>Horário para começar (Horário de Brasília)</label>
+                    <input type="time" id="startTime" />
+                </div>
+                <div class="form-group">
+                    <label>Mensagem personalizada (opcional - substitui a do CSV)</label>
+                    <textarea id="customMessage" rows="4" placeholder="Use {nome} para personalizar com o nome do contato
+
+Exemplo: Olá {nome}! Como você está hoje?"></textarea>
+                </div>
+            </div>
+
+            <!-- Seção de Controle -->
+            <div class="section">
+                <div class="section-title">🚀 4. Controlar Envio</div>
+                <button id="startBtn" class="btn" disabled>Iniciar Envio</button>
+                <button id="stopBtn" class="btn btn-stop" style="display: none;">Parar Envio</button>
+                
+                <div id="progressContainer" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                        <div class="progress-text" id="progressText">0 de 0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Logs -->
+            <div class="section">
+                <div class="section-title">📋 5. Logs do Sistema</div>
+                <div id="logs" class="logs"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Estados da aplicação
+        let isConnected = false;
+        let isSending = false;
+        let totalContacts = 0;
+
+        // Elementos DOM
+        const connectBtn = document.getElementById('connectBtn');
+        const connectionIndicator = document.getElementById('connectionIndicator');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const csvFile = document.getElementById('csvFile');
+        const csvPreview = document.getElementById('csvPreview');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const logs = document.getElementById('logs');
+
+        // Stats
+        const statConnected = document.getElementById('statConnected');
+        const statContacts = document.getElementById('statContacts');
+        const statSent = document.getElementById('statSent');
+        const statProgress = document.getElementById('statProgress');
+
+        // Funções de API
+        async function apiCall(endpoint, options = {}) {
+            try {
+                const response = await fetch(`/api${endpoint}`, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Erro na requisição');
+                }
+                
+                return data;
+            } catch (error) {
+                console.error('Erro na API:', error);
+                throw error;
+            }
+        }
+
+        // Conectar WhatsApp
+        connectBtn.addEventListener('click', async () => {
+            try {
+                connectBtn.disabled = true;
+                connectBtn.textContent = 'Conectando...';
+                showStatus('Iniciando conexão com WhatsApp...', 'info');
+
+                const result = await apiCall('/connect', { method: 'POST' });
+                showStatus(result.message, 'success');
+                
+                // Inicia polling para verificar status
+                checkConnectionStatus();
+                
+            } catch (error) {
+                showStatus(`Erro: ${error.message}`, 'error');
+                connectBtn.disabled = false;
+                connectBtn.textContent = 'Conectar WhatsApp';
+            }
+        });
+
+        // Upload CSV
+        csvFile.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            try {
+                const formData = new FormData();
+                formData.append('csvFile', file);
+
+                const response = await fetch('/api/upload-csv', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    totalContacts = result.total;
+                    statContacts.textContent = totalContacts;
+                    showCsvPreview(result.contacts, result.total);
+                    checkReadyToSend();
+                } else {
+                    throw new Error(result.error);
+                }
+                
+            } catch (error) {
+                showStatus(`Erro ao processar CSV: ${error.message}`, 'error');
+            }
+        });
+
+        // Iniciar envio
+        startBtn.addEventListener('click', async () => {
+            try {
+                const delay = parseInt(document.getElementById('delay').value) * 1000;
+                const startTime = document.getElementById('startTime').value;
+                const customMessage = document.getElementById('customMessage').value;
+
+                const result = await apiCall('/start-sending', {
+                    method: 'POST',
+                    body: JSON.stringify({ delay, startTime, customMessage })
+                });
+
+                showStatus(result.message, 'success');
+                startBtn.style.display = 'none';
+                stopBtn.style.display = 'block';
+                progressContainer.style.display = 'block';
+                isSending = true;
+
+            } catch (error) {
+                showStatus(`Erro: ${error.message}`, 'error');
+            }
+        });
+
+        // Parar envio
+        stopBtn.addEventListener('click', async () => {
+            try {
+                const result = await apiCall('/stop-sending', { method: 'POST' });
+                showStatus(result.message, 'info');
+                resetSendingUI();
+            } catch (error) {
+                showStatus(`Erro: ${error.message}`, 'error');
+            }
+        });
+
+        // Funções auxiliares
+        function showStatus(message, type) {
+            connectionStatus.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function showCsvPreview(contacts, total) {
+            let html = `
+                <h4>✅ CSV Processado: ${total} contatos carregados</h4>
+                <table>
+                    <thead>
+                        <tr><th>Telefone</th><th>Nome</th><th>Mensagem</th></tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            contacts.forEach(contact => {
+                html += `<tr>
+                    <td>${contact.telefone}</td>
+                    <td>${contact.nome}</td>
+                    <td>${contact.mensagem.substring(0, 50)}...</td>
+                </tr>`;
+            });
+
+            html += `</tbody></table>`;
+            
+            if (total > 5) {
+                html += `<p style="margin-top: 10px; color: #666;">... e mais ${total - 5} contatos</p>`;
+            }
+
+            csvPreview.innerHTML = html;
+            csvPreview.style.display = 'block';
+        }
+
+        function checkReadyToSend() {
+            startBtn.disabled = !(isConnected && totalContacts > 0 && !isSending);
+        }
+
+        function resetSendingUI() {
+            startBtn.style.display = 'block';
+            stopBtn.style.display = 'none';
+            progressContainer.style.display = 'none';
+            isSending = false;
+            checkReadyToSend();
+        }
+
+        function updateLogs(logEntries) {
+            logs.innerHTML = '';
+            logEntries.forEach(log => {
+                const div = document.createElement('div');
+                div.className = `log-entry ${log.type}`;
+                div.textContent = `[${log.timestamp}] ${log.message}`;
+                logs.appendChild(div);
+            });
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        // Polling para status
+        async function checkConnectionStatus() {
+            try {
+                const status = await apiCall('/status');
+                
+                // Atualiza conexão
+                if (status.isConnected !== isConnected) {
+                    isConnected = status.isConnected;
+                    
+                    if (isConnected) {
+                        connectBtn.textContent = '✅ Conectado';
+                        connectBtn.style.background = '#28a745';
+                        connectionIndicator.classList.add('connected');
+                        statConnected.textContent = '✅';
+                        showStatus('WhatsApp conectado com sucesso!', 'success');
+                    } else {
+                        connectBtn.textContent = 'Conectar WhatsApp';
+                        connectBtn.style.background = '';
+                        connectBtn.disabled = false;
+                        connectionIndicator.classList.remove('connected');
+                        statConnected.textContent = '❌';
+                    }
+                    
+                    checkReadyToSend();
+                }
+                
+                // Atualiza progresso do envio
+                if (status.isSending !== isSending) {
+                    isSending = status.isSending;
+                    
+                    if (!isSending && (startBtn.style.display === 'none')) {
+                        resetSendingUI();
+                    }
+                }
+                
+                // Atualiza estatísticas
+                if (status.sendingData) {
+                    const { current, total } = status.sendingData;
+                    
+                    if (total > 0) {
+                        const percentage = Math.round((current / total) * 100);
+                        
+                        progressFill.style.width = `${percentage}%`;
+                        progressText.textContent = `${current} de ${total}`;
+                        statSent.textContent = current;
+                        statProgress.textContent = `${percentage}%`;
+                    }
+                    
+                    // Atualiza logs
+                    if (status.sendingData.logs) {
+                        updateLogs(status.sendingData.logs);
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Erro ao verificar status:', error);
+            }
+            
+            // Continua polling a cada 2 segundos
+            setTimeout(checkConnectionStatus, 2000);
+        }
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            // Define horário atual como padrão
+            const now = new Date();
+            document.getElementById('startTime').value = now.toTimeString().slice(0, 5);
+            
+            // Inicia polling
+            checkConnectionStatus();
+            
+            console.log('🚀 WhatsApp Sender Pro inicializado!');
+        });
+    </script>
+</body>
+</html>
