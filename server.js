@@ -1,17 +1,33 @@
 const express = require('express');
-const wppconnect = require('@wppconnect-team/wppconnect');
+const http = require('http');
+const socketIo = require('socket.io');
+const { DisconnectReason, useMultiFileAuthState, makeWASocket } = require('@whiskeysockets/baileys');
+const QRCode = require('qrcode');
 const multer = require('multer');
 const csvParser = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
 const moment = require('moment-timezone');
 const cron = require('node-cron');
+const P = require('pino');
 
+// Configuração do app
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 
-// Configurações
-let client = null;
+// Logger
+const logger = P({ level: 'info' });
+
+// Configurações globais
+let sock = null;
 let isConnected = false;
 let messageQueue = [];
 let currentConfig = {
@@ -27,119 +43,119 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Configurações específicas para container
-async function initWhatsAppContainer() {
+// Função para inicializar WhatsApp com Baileys
+async function initWhatsApp() {
   try {
-    console.log('🔄 Iniciando WhatsApp em container...');
-    
-    // Criar pasta tokens se não existir
-    const tokensPath = path.join(__dirname, 'tokens');
-    if (!fs.existsSync(tokensPath)) {
-      fs.mkdirSync(tokensPath, { recursive: true });
+    logger.info('🔄 Iniciando WhatsApp (Railway + Baileys)...');
+
+    // Criar diretório de auth se não existir
+    const authDir = 'auth_info_baileys';
+    if (!fs.existsSync(authDir)) {
+      fs.mkdirSync(authDir, { recursive: true });
     }
 
-    client = await wppconnect.create({
-      session: 'disparador-container',
-      
-      // CONFIGURAÇÕES CRÍTICAS PARA CONTAINER
-      headless: true,         // OBRIGATÓRIO em containers
-      devtools: false,
-      useChrome: true,
-      debug: false,
-      logQR: true,
-      disableWelcome: true,
-      updatesLog: false,
-      autoClose: 0,
-      
-      // Pasta de tokens
-      folderNameToken: './tokens',
-      createPathFileToken: true,
-      
-      // Configurações do Puppeteer para container
-      puppeteerOptions: {
-        headless: true,       // OBRIGATÓRIO
-        args: [
-          '--no-sandbox',                    // CRÍTICO para containers
-          '--disable-setuid-sandbox',        // CRÍTICO para containers
-          '--disable-dev-shm-usage',         // Evita problemas de memória
-          '--disable-gpu',                   // GPU não funciona em containers
-          '--no-first-run',
-          '--disable-extensions',
-          '--disable-plugins',
-          '--disable-images',                // Economiza recursos
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-features=TranslateUI',
-          '--disable-web-security',
-          '--single-process',                // Para containers com poucos recursos
-          '--memory-pressure-off',
-          '--max_old_space_size=4096'        // Limite de memória
-        ],
-        timeout: 180000,      // 3 minutos de timeout
-        
-        // Executável do Chrome (detecta automaticamente)
-        executablePath: process.env.CHROME_BIN || 
-                       '/usr/bin/google-chrome-stable' || 
-                       '/usr/bin/google-chrome' ||
-                       '/usr/bin/chromium-browser'
-      },
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
-      // Callback para QR Code
-      catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
-        console.log('\n🔥🔥🔥 QR CODE GERADO 🔥🔥🔥');
-        console.log(`📱 Tentativa ${attempts}/3`);
-        console.log('🌐 URL do QR:', urlCode);
-        console.log('\n📋 QR CODE ASCII:');
-        console.log(asciiQR);
-        console.log('\n🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n');
+    sock = makeWASocket({
+      auth: state,
+      printQRInTerminal: false, // NÃO imprimir no terminal
+      logger: P({ level: 'silent' }), // Reduzir logs
+      browser: ['Disparador Railway', 'Chrome', '1.0.0'],
+      generateHighQualityLinkPreview: false,
+      syncFullHistory: false,
+      markOnlineOnConnect: true
+    });
+
+    // Event listener para conexão
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr !== undefined) {
+        logger.info('📱 QR Code gerado para interface web');
         
-        // Salvar QR como arquivo
-        if (base64Qr) {
-          try {
-            const qrPath = path.join(__dirname, 'qr-code.png');
-            const base64Data = base64Qr.replace(/^data:image\/png;base64,/, '');
-            fs.writeFileSync(qrPath, base64Data, 'base64');
-            console.log(`💾 QR Code salvo em: ${qrPath}`);
-            console.log('🌐 Acesse via: http://localhost:3000/qr-code.png');
-          } catch (err) {
-            console.error('❌ Erro ao salvar QR:', err.message);
-          }
+        try {
+          // Gerar QR Code como Data URL
+          const qrCodeDataURL = await QRCode.toDataURL(qr, {
+            width: 300,
+            margin: 2,
+            color: {
+              dark: '#000000',
+              light: '#FFFFFF'
+            }
+          });
+
+          // Enviar QR Code via WebSocket para todos os clientes conectados
+          io.emit('qr-code', {
+            qr: qrCodeDataURL,
+            message: 'Escaneie o QR Code com seu WhatsApp'
+          });
+
+          logger.info('✅ QR Code enviado para interface web');
+
+        } catch (error) {
+          logger.error('❌ Erro ao gerar QR Code:', error);
         }
-      },
+      }
 
-      statusFind: (statusSession, session) => {
-        console.log(`📊 [${new Date().toLocaleTimeString()}] Status: ${statusSession}`);
+      if (connection === 'close') {
+        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
         
-        if (statusSession === 'isLogged') {
-          isConnected = true;
-          console.log('✅ WhatsApp conectado com sucesso!');
-        } else if (statusSession === 'notLogged') {
-          isConnected = false;
-          console.log('❌ WhatsApp desconectado - QR Code necessário');
-        } else if (statusSession === 'qrReadSuccess') {
-          console.log('📱 QR Code lido com sucesso!');
+        logger.info(`❌ Conexão fechada: ${lastDisconnect.error}`);
+        
+        if (shouldReconnect) {
+          logger.info('🔄 Reconectando em 5 segundos...');
+          setTimeout(initWhatsApp, 5000);
+        } else {
+          logger.info('🚪 Deslogado - necessário novo QR Code');
+          io.emit('disconnected', { message: 'Deslogado do WhatsApp' });
+        }
+        
+        isConnected = false;
+        io.emit('connection-status', { connected: false });
+
+      } else if (connection === 'open') {
+        logger.info('✅ WhatsApp conectado com sucesso!');
+        isConnected = true;
+        
+        // Notificar todos os clientes sobre a conexão
+        io.emit('connected', { 
+          message: 'WhatsApp conectado com sucesso!',
+          user: sock.user
+        });
+        io.emit('connection-status', { connected: true });
+      }
+    });
+
+    // Salvar credenciais quando atualizadas
+    sock.ev.on('creds.update', saveCreds);
+
+    // Event listener para mensagens (opcional - para logs)
+    sock.ev.on('messages.upsert', (m) => {
+      // Log básico de mensagens recebidas (opcional)
+      if (m.messages && m.messages[0]) {
+        const msg = m.messages[0];
+        if (!msg.key.fromMe && msg.message) {
+          logger.info(`📨 Nova mensagem recebida de: ${msg.key.remoteJid}`);
         }
       }
     });
 
-    console.log('✅ Cliente WhatsApp inicializado para container');
-    return client;
+    return sock;
 
   } catch (error) {
-    console.error('❌ Erro ao conectar WhatsApp:', error);
+    logger.error('❌ Erro ao inicializar WhatsApp:', error);
     
-    // Log detalhado do erro para debug
-    if (error.message.includes('libglib')) {
-      console.error('🚨 ERRO: Dependências do sistema faltando!');
-      console.error('💡 Solução: Use o Dockerfile fornecido ou instale as dependências');
-    }
+    // Notificar erro via WebSocket
+    io.emit('connection-error', {
+      message: 'Erro ao conectar WhatsApp',
+      error: error.message
+    });
     
     return null;
   }
 }
 
-// Processar CSV
+// Função para processar CSV
 function processCSV(filePath) {
   return new Promise((resolve, reject) => {
     const contacts = [];
@@ -147,7 +163,6 @@ function processCSV(filePath) {
     fs.createReadStream(filePath)
       .pipe(csvParser())
       .on('data', (data) => {
-        // Esperado: nome, numero, mensagem (opcional)
         if (data.numero || data.number) {
           contacts.push({
             nome: data.nome || data.name || 'Contato',
@@ -157,36 +172,53 @@ function processCSV(filePath) {
         }
       })
       .on('end', () => {
-        console.log(`📋 ${contacts.length} contatos carregados do CSV`);
+        logger.info(`📋 ${contacts.length} contatos carregados do CSV`);
         resolve(contacts);
       })
       .on('error', reject);
   });
 }
 
-// Enviar mensagem com delay
+// Função para enviar mensagem
 async function sendMessage(numero, mensagem, nome = 'Contato') {
   try {
-    if (!client || !isConnected) {
+    if (!sock || !isConnected) {
       throw new Error('WhatsApp não conectado');
     }
 
-    const phoneNumber = numero.includes('@') ? numero : `${numero}@c.us`;
+    const phoneNumber = numero.includes('@') ? numero : `${numero}@s.whatsapp.net`;
+    const finalMessage = mensagem.replace(/{nome}/g, nome).replace(/{name}/g, nome);
+
+    await sock.sendMessage(phoneNumber, { text: finalMessage });
     
-    // Personalizar mensagem com nome se necessário
-    const finalMessage = mensagem.replace('{nome}', nome).replace('{name}', nome);
+    logger.info(`✅ Mensagem enviada para ${nome} (${numero})`);
     
-    await client.sendText(phoneNumber, finalMessage);
-    console.log(`✅ Mensagem enviada para ${nome} (${numero})`);
-    
+    // Notificar via WebSocket
+    io.emit('message-sent', {
+      success: true,
+      contact: nome,
+      number: numero,
+      message: 'Mensagem enviada com sucesso'
+    });
+
     return { success: true, contact: nome, number: numero };
+
   } catch (error) {
-    console.error(`❌ Erro ao enviar para ${nome} (${numero}):`, error.message);
+    logger.error(`❌ Erro ao enviar para ${nome} (${numero}):`, error.message);
+    
+    // Notificar erro via WebSocket
+    io.emit('message-error', {
+      success: false,
+      contact: nome,
+      number: numero,
+      error: error.message
+    });
+
     return { success: false, contact: nome, number: numero, error: error.message };
   }
 }
 
-// Processar fila de mensagens
+// Função para processar fila de mensagens
 async function processMessageQueue() {
   if (messageQueue.length === 0 || !currentConfig.isRunning) {
     return;
@@ -194,23 +226,33 @@ async function processMessageQueue() {
 
   const message = messageQueue.shift();
   const result = await sendMessage(message.numero, message.mensagem, message.nome);
-  
-  // Aguardar delay antes da próxima mensagem
+
+  // Atualizar progresso via WebSocket
+  io.emit('queue-progress', {
+    remaining: messageQueue.length,
+    total: messageQueue.length + 1,
+    current: message,
+    result: result
+  });
+
   if (messageQueue.length > 0) {
-    console.log(`⏳ Aguardando ${currentConfig.delay}ms antes da próxima mensagem...`);
+    logger.info(`⏳ Aguardando ${currentConfig.delay}ms antes da próxima mensagem...`);
     setTimeout(processMessageQueue, currentConfig.delay);
   } else {
-    console.log('🎉 Todos os disparos foram concluídos!');
+    logger.info('🎉 Todos os disparos foram concluídos!');
     currentConfig.isRunning = false;
+    
+    io.emit('queue-finished', {
+      message: 'Todos os disparos foram concluídos!'
+    });
   }
 }
 
-// Agendar disparo
+// Função para agendar disparo
 function scheduleDispatch(contacts, message, delay, startTime) {
   currentConfig.delay = delay;
   currentConfig.startTime = startTime;
-  
-  // Preparar fila de mensagens
+
   messageQueue = contacts.map(contact => ({
     nome: contact.nome,
     numero: contact.numero,
@@ -218,38 +260,34 @@ function scheduleDispatch(contacts, message, delay, startTime) {
   }));
 
   const [hour, minute] = startTime.split(':');
-  
-  // Usar cron para agendar no horário de Brasília
   const cronExpression = `${minute} ${hour} * * *`;
-  
+
   cron.schedule(cronExpression, () => {
-    console.log(`🚀 Iniciando disparo agendado às ${startTime}`);
+    logger.info(`🚀 Iniciando disparo agendado às ${startTime}`);
     currentConfig.isRunning = true;
+    
+    io.emit('schedule-started', {
+      message: `Disparo iniciado às ${startTime}`,
+      queueLength: messageQueue.length
+    });
+    
     processMessageQueue();
   }, {
     timezone: 'America/Sao_Paulo'
   });
 
-  console.log(`📅 Disparo agendado para ${startTime} (horário de Brasília)`);
-  console.log(`📊 ${messageQueue.length} mensagens na fila`);
+  logger.info(`📅 Disparo agendado para ${startTime} (Brasília) com ${messageQueue.length} mensagens`);
 }
 
 // ROTAS DA API
-app.get('/qr-code.png', (req, res) => {
-  const qrPath = path.join(__dirname, 'qr-code.png');
-  if (fs.existsSync(qrPath)) {
-    res.sendFile(qrPath);
-  } else {
-    res.status(404).send('QR Code não encontrado');
-  }
-});
 
 // Status da conexão
 app.get('/api/status', (req, res) => {
   res.json({
     connected: isConnected,
     queueLength: messageQueue.length,
-    isRunning: currentConfig.isRunning
+    isRunning: currentConfig.isRunning,
+    user: sock?.user || null
   });
 });
 
@@ -261,21 +299,19 @@ app.post('/api/upload', upload.single('csvFile'), async (req, res) => {
     }
 
     const { message, delay, startTime } = req.body;
-    
+
     if (!message || !delay || !startTime) {
       return res.status(400).json({ error: 'Parâmetros obrigatórios não fornecidos' });
     }
 
-    // Processar CSV
     const contacts = await processCSV(req.file.path);
-    
+
     if (contacts.length === 0) {
       return res.status(400).json({ error: 'Nenhum contato válido encontrado no CSV' });
     }
 
-    // Agendar disparo
     scheduleDispatch(contacts, message, parseInt(delay) * 1000, startTime);
-    
+
     // Limpar arquivo temporário
     fs.unlinkSync(req.file.path);
 
@@ -286,7 +322,7 @@ app.post('/api/upload', upload.single('csvFile'), async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erro no upload:', error);
+    logger.error('❌ Erro no upload:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -301,7 +337,7 @@ app.post('/api/start-now', (req, res) => {
     return res.status(400).json({ error: 'Disparo já está em execução' });
   }
 
-  console.log('🚀 Iniciando disparo imediato');
+  logger.info('🚀 Iniciando disparo imediato');
   currentConfig.isRunning = true;
   processMessageQueue();
 
@@ -311,7 +347,27 @@ app.post('/api/start-now', (req, res) => {
 // Parar disparo
 app.post('/api/stop', (req, res) => {
   currentConfig.isRunning = false;
+  messageQueue = []; // Limpar fila
+  
+  io.emit('queue-stopped', { message: 'Disparo interrompido' });
+  
   res.json({ success: true, message: 'Disparo interrompido' });
+});
+
+// Reconectar WhatsApp
+app.post('/api/reconnect', async (req, res) => {
+  logger.info('🔄 Forçando reconexão...');
+  
+  if (sock) {
+    try {
+      await sock.logout();
+    } catch (error) {
+      logger.error('Erro ao deslogar:', error);
+    }
+  }
+  
+  setTimeout(initWhatsApp, 2000);
+  res.json({ success: true, message: 'Reconexão iniciada' });
 });
 
 // Servir página principal
@@ -319,8 +375,58 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// WebSocket eventos
+io.on('connection', (socket) => {
+  logger.info('🔌 Cliente conectado via WebSocket');
+
+  // Enviar status atual para novo cliente
+  socket.emit('connection-status', { connected: isConnected });
+  
+  if (messageQueue.length > 0) {
+    socket.emit('queue-status', {
+      queueLength: messageQueue.length,
+      isRunning: currentConfig.isRunning
+    });
+  }
+
+  socket.on('disconnect', () => {
+    logger.info('🔌 Cliente desconectado do WebSocket');
+  });
+
+  // Permitir que cliente solicite reconexão
+  socket.on('request-reconnect', () => {
+    logger.info('🔄 Reconexão solicitada via WebSocket');
+    if (sock) {
+      sock.logout().catch(() => {});
+    }
+    setTimeout(initWhatsApp, 2000);
+  });
+});
+
 // Iniciar servidor
-app.listen(PORT, async () => {
-  console.log(`🌐 Servidor rodando em http://localhost:${PORT}`);
+server.listen(PORT, async () => {
+  logger.info(`🌐 Servidor rodando na porta ${PORT}`);
+  logger.info('🚀 Sistema otimizado para Railway');
+  logger.info('📱 QR Code será exibido na interface web');
+  logger.info('🔗 WebSockets ativo para atualizações em tempo real');
+
+  // Inicializar WhatsApp
   await initWhatsApp();
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('🛑 Recebido SIGTERM, fechando servidor...');
+  server.close(() => {
+    logger.info('✅ Servidor fechado');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('🛑 Recebido SIGINT, fechando servidor...');
+  server.close(() => {
+    logger.info('✅ Servidor fechado');
+    process.exit(0);
+  });
 });
