@@ -8,7 +8,7 @@ const moment = require('moment-timezone');
 const cron = require('node-cron');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Configurações
 let client = null;
@@ -27,10 +27,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Inicializar WhatsApp com configurações corrigidas
-async function initWhatsApp() {
+// Configurações específicas para container
+async function initWhatsAppContainer() {
   try {
-    console.log('🔄 Iniciando conexão com WhatsApp...');
+    console.log('🔄 Iniciando WhatsApp em container...');
     
     // Criar pasta tokens se não existir
     const tokensPath = path.join(__dirname, 'tokens');
@@ -39,61 +39,69 @@ async function initWhatsApp() {
     }
 
     client = await wppconnect.create({
-      session: 'disparador',
+      session: 'disparador-container',
       
-      // CONFIGURAÇÕES CRÍTICAS PARA QR CODE
-      headless: false,        // IMPORTANTE: false para mostrar QR
+      // CONFIGURAÇÕES CRÍTICAS PARA CONTAINER
+      headless: true,         // OBRIGATÓRIO em containers
       devtools: false,
-      useChrome: true,        // Usar Chrome ao invés do Chromium
+      useChrome: true,
       debug: false,
-      logQR: true,           // IMPORTANTE: true para mostrar QR no terminal
+      logQR: true,
       disableWelcome: true,
-      updatesLog: true,
-      autoClose: 0,          // IMPORTANTE: 0 para não fechar automaticamente
+      updatesLog: false,
+      autoClose: 0,
       
-      // Configurações de pasta
+      // Pasta de tokens
       folderNameToken: './tokens',
       createPathFileToken: true,
-      tokenStore: 'file',
       
-      // Configurações do browser
-      browserArgs: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-first-run',
-        '--disable-extensions',
-        '--disable-plugins'
-      ],
-      
+      // Configurações do Puppeteer para container
       puppeteerOptions: {
-        headless: false,     // IMPORTANTE: false aqui também
+        headless: true,       // OBRIGATÓRIO
         args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu'
+          '--no-sandbox',                    // CRÍTICO para containers
+          '--disable-setuid-sandbox',        // CRÍTICO para containers
+          '--disable-dev-shm-usage',         // Evita problemas de memória
+          '--disable-gpu',                   // GPU não funciona em containers
+          '--no-first-run',
+          '--disable-extensions',
+          '--disable-plugins',
+          '--disable-images',                // Economiza recursos
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-features=TranslateUI',
+          '--disable-web-security',
+          '--single-process',                // Para containers com poucos recursos
+          '--memory-pressure-off',
+          '--max_old_space_size=4096'        // Limite de memória
         ],
-        timeout: 60000
+        timeout: 180000,      // 3 minutos de timeout
+        
+        // Executável do Chrome (detecta automaticamente)
+        executablePath: process.env.CHROME_BIN || 
+                       '/usr/bin/google-chrome-stable' || 
+                       '/usr/bin/google-chrome' ||
+                       '/usr/bin/chromium-browser'
       },
 
-      // Callback para capturar QR Code
+      // Callback para QR Code
       catchQR: (base64Qr, asciiQR, attempts, urlCode) => {
-        console.log('\n🔥🔥🔥 QR CODE DETECTADO 🔥🔥🔥');
+        console.log('\n🔥🔥🔥 QR CODE GERADO 🔥🔥🔥');
         console.log(`📱 Tentativa ${attempts}/3`);
-        console.log('🔗 URL do QR Code:', urlCode);
-        console.log('\n📋 ESCANEIE O QR CODE ABAIXO:\n');
+        console.log('🌐 URL do QR:', urlCode);
+        console.log('\n📋 QR CODE ASCII:');
         console.log(asciiQR);
         console.log('\n🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥\n');
         
-        // Salvar QR como imagem também
+        // Salvar QR como arquivo
         if (base64Qr) {
-          const qrPath = path.join(__dirname, 'qr-code.png');
-          const base64Data = base64Qr.replace(/^data:image\/png;base64,/, '');
           try {
+            const qrPath = path.join(__dirname, 'qr-code.png');
+            const base64Data = base64Qr.replace(/^data:image\/png;base64,/, '');
             fs.writeFileSync(qrPath, base64Data, 'base64');
             console.log(`💾 QR Code salvo em: ${qrPath}`);
+            console.log('🌐 Acesse via: http://localhost:3000/qr-code.png');
           } catch (err) {
             console.error('❌ Erro ao salvar QR:', err.message);
           }
@@ -101,38 +109,32 @@ async function initWhatsApp() {
       },
 
       statusFind: (statusSession, session) => {
-        console.log(`📊 Status da Sessão '${session}': ${statusSession}`);
+        console.log(`📊 [${new Date().toLocaleTimeString()}] Status: ${statusSession}`);
         
-        switch(statusSession) {
-          case 'isLogged':
-            isConnected = true;
-            console.log('✅ WhatsApp conectado com sucesso!');
-            break;
-          case 'notLogged':
-            isConnected = false;
-            console.log('❌ WhatsApp desconectado - aguardando QR Code...');
-            break;
-          case 'qrReadSuccess':
-            console.log('📱 QR Code lido com sucesso!');
-            break;
-          case 'qrReadFail':
-            console.log('❌ Falha ao ler QR Code - gerando novo...');
-            break;
-          case 'browserClose':
-            isConnected = false;
-            console.log('❌ Browser fechado');
-            break;
-          default:
-            console.log(`ℹ️ Status: ${statusSession}`);
+        if (statusSession === 'isLogged') {
+          isConnected = true;
+          console.log('✅ WhatsApp conectado com sucesso!');
+        } else if (statusSession === 'notLogged') {
+          isConnected = false;
+          console.log('❌ WhatsApp desconectado - QR Code necessário');
+        } else if (statusSession === 'qrReadSuccess') {
+          console.log('📱 QR Code lido com sucesso!');
         }
       }
     });
 
-    console.log('✅ Cliente WhatsApp inicializado');
+    console.log('✅ Cliente WhatsApp inicializado para container');
     return client;
 
   } catch (error) {
     console.error('❌ Erro ao conectar WhatsApp:', error);
+    
+    // Log detalhado do erro para debug
+    if (error.message.includes('libglib')) {
+      console.error('🚨 ERRO: Dependências do sistema faltando!');
+      console.error('💡 Solução: Use o Dockerfile fornecido ou instale as dependências');
+    }
+    
     return null;
   }
 }
@@ -233,6 +235,14 @@ function scheduleDispatch(contacts, message, delay, startTime) {
 }
 
 // ROTAS DA API
+app.get('/qr-code.png', (req, res) => {
+  const qrPath = path.join(__dirname, 'qr-code.png');
+  if (fs.existsSync(qrPath)) {
+    res.sendFile(qrPath);
+  } else {
+    res.status(404).send('QR Code não encontrado');
+  }
+});
 
 // Status da conexão
 app.get('/api/status', (req, res) => {
